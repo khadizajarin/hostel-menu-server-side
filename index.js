@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const app = express();
 require('dotenv').config();
+const jwt = require('jsonwebtoken');
 
 const { MongoClient, ServerApiVersion } = require('mongodb');
 const port = process.env.PORT || 5000;
@@ -55,11 +56,11 @@ async function run() {
       })
     }
 
-     // use verify admin after verifyToken
+     // using verifyAddmin after verifyToken
      const verifyAdmin = async (req, res, next) => {
       const email = req.decoded.email;
       const query = { email: email };
-      const user = await userCollection.findOne(query);
+      const user = await usersCollection.findOne(query);
       const isAdmin = user?.role === 'admin';
       if (!isAdmin) {
         return res.status(403).send({ message: 'forbidden access' });
@@ -117,10 +118,77 @@ async function run() {
       
 
       //user CRUB OPERATIONS
-      app.post ('/users', async(req, res) => {
+      app.post ('/users',verifyToken,verifyAdmin, async(req, res) => {
         const newUser = req.body;
         const result = await usersCollection.insertOne(newUser);
         res.send(result);
+      })
+
+      app.get('/users',verifyToken, async(req, res) => {
+        // console.log(req.headers);
+        const cursor = usersCollection.find();
+        const result = await cursor.toArray();
+        res.send(result);
+      }) 
+
+      app.get('/users/admin', async (req, res) => {
+        const cursor = usersCollection.find({ role: 'admin' }); 
+        const result = await cursor.toArray();
+        res.send(result);
+      });
+
+    // users related api
+    app.get('/users', verifyToken, verifyAdmin, async (req, res) => {
+      const result = await usersCollection.find().toArray();
+      res.send(result);
+    });
+
+    app.get('/users/admin/:email', verifyToken, async (req, res) => {
+      const email = req.params.email;
+
+      if (email !== req.decoded.email) {
+        return res.status(403).send({ message: 'unauthhorized access!' })
+      }
+      const query = { email: email };
+      // console.log(query);
+      const user = await usersCollection.findOne(query);
+      let admin = false;
+      if (user) {
+        admin = user?.role === 'admin';
+      }
+      res.send({ admin });
+    })
+
+    app.post('/users', async (req, res) => {
+      const user = req.body;
+      // insert email if user doesnt exists: 
+      // you can do this many ways (1. email unique, 2. upsert 3. simple checking)
+      const query = { email: user.email }
+      const existingUser = await usersCollection.findOne(query);
+      if (existingUser) {
+        return res.send({ message: 'user already exists', insertedId: null })
+      }
+      const result = await usersCollection.insertOne(user);
+      res.send(result);
+    });
+
+    app.patch('/users/admin/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const filter = { _id: new ObjectId(id) };
+      const updatedDoc = {
+        $set: {
+          role: 'admin'
+        }
+      }
+      const result = await usersCollection.updateOne(filter, updatedDoc);
+      res.send(result);
+    })
+
+    app.delete('/users/:id', verifyToken, verifyAdmin, async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) }
+      const result = await usersCollection.deleteOne(query);
+      res.send(result);
     })
 
 
